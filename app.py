@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import itertools
 
-st.title("🚤 競艇予想ツール【プロ仕様】")
+st.title("🚤 競艇予想ツール【プロ仕様：F・出遅れ対応】")
 
 # ===== 競艇場データ =====
 stadium_data = {
@@ -34,33 +34,72 @@ stadium_data = {
 
 course_weight = {1:1.5,2:1.2,3:1.0,4:0.9,5:0.8,6:0.7}
 
-# ===== 入力 =====
+# ===== 競艇場選択 =====
 stadium = st.selectbox("競艇場", list(stadium_data.keys()))
 st_data = stadium_data[stadium]
 
-boats = []
-st.subheader("出走データ")
+st.subheader("出走データ入力（FはF0.05の形式で入力）")
 
+boats = []
+
+# ===== ST変換関数 =====
+def convert_st(value):
+    value = value.strip().upper()
+    if value.startswith("F"):
+        return -float(value.replace("F", ""))
+    return float(value)
+
+# ===== 入力フォーム =====
 for i in range(6):
+    st.markdown(f"### {i+1}号艇")
+
     col1, col2, col3 = st.columns(3)
 
     with col1:
         course = st.number_input(f"コース{i+1}", 1, 6, i+1)
 
     with col2:
-        st_time = st.number_input(f"ST{i+1}", 0.00, 0.30, 0.15)
+        st_input = st.text_input(f"ST{i+1}", "0.15")
 
     with col3:
         ex_time = st.number_input(f"展示{i+1}", 6.50, 7.20, 6.80)
 
-    boats.append({"艇番":i+1,"コース":course,"ST":st_time,"展示タイム":ex_time})
+    boats.append({
+        "艇番": i+1,
+        "コース": course,
+        "ST_raw": st_input,
+        "展示タイム": ex_time
+    })
 
-# ===== スコア =====
+# ===== スコア関数 =====
 def score(row):
+    st_val = convert_st(row["ST_raw"])
+
     s = (7.0 - row["展示タイム"]) * 10
-    s += (0.20 - row["ST"]) * 20
+
+    # ===== ST評価 =====
+    if st_val < 0:
+        # フライング（攻めすぎ）
+        st_score = 5 + (st_val * 20)
+    elif st_val <= 0.10:
+        st_score = 10
+    elif st_val <= 0.15:
+        st_score = 8
+    elif st_val <= 0.20:
+        st_score = 6
+    elif st_val <= 0.25:
+        st_score = 3
+    elif st_val <= 0.30:
+        st_score = 0
+    else:
+        st_score = -6
+
+    s += st_score
+
+    # ===== コース補正 =====
     s *= course_weight[row["コース"]]
 
+    # ===== 場補正 =====
     if row["コース"] == 1:
         s *= st_data["in"]
     if row["コース"] in [3,4]:
@@ -73,24 +112,27 @@ def score(row):
     return s
 
 # ===== 実行 =====
-if st.button("予想開始"):
+if st.button("🚀 予想実行"):
     df = pd.DataFrame(boats)
-    df["スコア"] = df.apply(score, axis=1)
 
-    # 確率化
+    # ST変換
+    df["ST"] = df["ST_raw"].apply(convert_st)
+
+    df["スコア"] = df.apply(score, axis=1)
     df["確率"] = df["スコア"] / df["スコア"].sum()
 
-    st.write("### スコア")
+    st.subheader("📊 スコア結果")
     st.dataframe(df)
 
-    # ===== 買い目生成 =====
-    st.write("### オッズ入力（3連単）")
+    # ===== 買い目 =====
+    st.subheader("💰 期待値計算")
 
+    combos = list(itertools.permutations(df["艇番"], 3))[:20]
     bets = []
-    combos = list(itertools.permutations(df["艇番"], 3))[:20]  # 上位20点だけ
 
     for combo in combos:
         odds = st.number_input(f"{combo}", 1.0, 500.0, 20.0)
+
         p = (
             df.loc[df["艇番"]==combo[0],"確率"].values[0] *
             df.loc[df["艇番"]==combo[1],"確率"].values[0] *
@@ -98,13 +140,11 @@ if st.button("予想開始"):
         )
 
         ev = odds * p
-
-        bets.append({"買い目":combo,"オッズ":odds,"期待値":ev})
+        bets.append({"買い目": combo, "オッズ": odds, "期待値": ev})
 
     bet_df = pd.DataFrame(bets)
 
-    # ===== プラス期待値のみ =====
     good = bet_df[bet_df["期待値"] > 1.2]
 
-    st.write("### 💰 狙い目（期待値1.2以上）")
+    st.subheader("🔥 狙い目（期待値1.2以上）")
     st.dataframe(good.sort_values(by="期待値", ascending=False))
