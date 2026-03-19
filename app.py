@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import itertools
 
-st.title("🚤 競艇予想ツール【ボタンなし・完全手入力】")
+st.title("🚤 競艇予想ツール")
 
 # ===== 競艇場データ =====
 stadium_data = {
