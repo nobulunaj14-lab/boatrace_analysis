@@ -3,7 +3,7 @@ import pandas as pd
 
 st.set_page_config(layout="centered")
 
-st.title("🚤 競艇予想ツール【色分けUI・スマホ対応】")
+st.title("🚤 競艇予想ツール【スマホ対応】")
 
 # ===== 競艇場 =====
 stadium_data = {
