@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import itertools
 
-st.title("🚤 競艇予想ツール【平均STハイフン対応版】")
+st.title("🚤 競艇予想ツール【シンプル入力版】")
 
 # ===== 全競艇場 =====
 stadium_data = {
@@ -40,33 +40,32 @@ st_data = stadium_data[stadium]
 
 # ===== 気象 =====
 st.subheader("🌊 気象条件")
-
 wind_dir = st.selectbox("風向き", ["無風","向かい風","追い風","横風"])
 wind_speed = st.text_input("風速", "3")
 wave = st.text_input("波の高さ", "5")
 
 # ===== 入力 =====
 boats = []
-st.subheader("出走データ（平均STは「-」入力可）")
+st.subheader("出走データ（平均STは「-」可）")
 
 for i in range(6):
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     with col1:
         course = st.text_input(f"コース{i+1}", str(i+1))
     with col2:
         st_time = st.text_input(f"ST{i+1}", "0.15")
     with col3:
-        avg_st = st.text_input(f"平均ST{i+1}", "0.15")  # ←ここに「-」OK
+        avg_st = st.text_input(f"平均ST{i+1}", "0.15")
     with col4:
         ex = st.text_input(f"展示{i+1}", "6.80")
     with col5:
         motor = st.text_input(f"モーター{i+1}", "30")
-    with col6:
-        boat = st.text_input(f"ボート{i+1}", "30")
+
+    boat = st.text_input(f"ボート{i+1}", "30")
 
     boats.append({
-        "艇番": i+1,
+        "艇番": i+1,  # 内部のみ
         "コース": course,
         "ST": st_time,
         "平均ST": avg_st,
@@ -95,7 +94,6 @@ def score(row):
 
     s = (7.0 - ex) * 10
 
-    # ST
     if st_val is not None:
         if st_val <= 0.10:
             s += 10
@@ -106,7 +104,6 @@ def score(row):
         else:
             s -= 5
 
-    # 平均ST（ハイフン対応）
     if avg_st is not None:
         if avg_st <= 0.13:
             s += 6
@@ -115,10 +112,8 @@ def score(row):
         else:
             s -= 3
     else:
-        # データなし → 少し荒れ要素
         s += 1
 
-    # モーター・ボート
     s += motor * 0.3
     s += boat * 0.2
 
