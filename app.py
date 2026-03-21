@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import itertools
 
-st.title("🚤 競艇予想ツール【風・波・展開・自動買い目】")
+st.title("🚤 競艇予想ツール【平均STハイフン対応版】")
 
 # ===== 全競艇場 =====
 stadium_data = {
@@ -34,45 +34,34 @@ stadium_data = {
 
 course_weight = {1:1.5,2:1.2,3:1.0,4:0.9,5:0.8,6:0.7}
 
-# ===== 入力 =====
+# ===== 競艇場 =====
 stadium = st.selectbox("競艇場", list(stadium_data.keys()))
 st_data = stadium_data[stadium]
 
+# ===== 気象 =====
 st.subheader("🌊 気象条件")
 
-colw1, colw2, colw3 = st.columns(3)
-
-with colw1:
-    wind_dir = st.selectbox("風向き", ["無風","向かい風","追い風","横風"])
-
-with colw2:
-    wind_speed = st.text_input("風速(m)", "3")
-
-with colw3:
-    wave = st.text_input("波の高さ(cm)", "5")
-
-boats = []
-st.subheader("出走データ")
+wind_dir = st.selectbox("風向き", ["無風","向かい風","追い風","横風"])
+wind_speed = st.text_input("風速", "3")
+wave = st.text_input("波の高さ", "5")
 
 # ===== 入力 =====
+boats = []
+st.subheader("出走データ（平均STは「-」入力可）")
+
 for i in range(6):
     col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     with col1:
         course = st.text_input(f"コース{i+1}", str(i+1))
-
     with col2:
         st_time = st.text_input(f"ST{i+1}", "0.15")
-
     with col3:
-        avg_st = st.text_input(f"平均ST{i+1}", "0.15")
-
+        avg_st = st.text_input(f"平均ST{i+1}", "0.15")  # ←ここに「-」OK
     with col4:
-        ex_time = st.text_input(f"展示{i+1}", "6.80")
-
+        ex = st.text_input(f"展示{i+1}", "6.80")
     with col5:
         motor = st.text_input(f"モーター{i+1}", "30")
-
     with col6:
         boat = st.text_input(f"ボート{i+1}", "30")
 
@@ -81,43 +70,55 @@ for i in range(6):
         "コース": course,
         "ST": st_time,
         "平均ST": avg_st,
-        "展示タイム": ex_time,
+        "展示タイム": ex,
         "モーター": motor,
         "ボート": boat
     })
 
 # ===== 変換 =====
-def to_float(x):
+def to_float_or_none(x):
     try:
+        if str(x).strip() == "-":
+            return None
         return float(x)
     except:
-        return 0
+        return None
 
 # ===== スコア =====
 def score(row):
-    st_val = to_float(row["ST"])
-    avg_st = to_float(row["平均ST"])
-    ex = to_float(row["展示タイム"])
-    motor = to_float(row["モーター"])
-    boat = to_float(row["ボート"])
-    course = int(to_float(row["コース"]))
+    st_val = to_float_or_none(row["ST"])
+    avg_st = to_float_or_none(row["平均ST"])
+    ex = to_float_or_none(row["展示タイム"]) or 7.0
+    motor = to_float_or_none(row["モーター"]) or 0
+    boat = to_float_or_none(row["ボート"]) or 0
+    course = int(to_float_or_none(row["コース"]) or 1)
 
     s = (7.0 - ex) * 10
 
-    if st_val <= 0.10:
-        s += 10
-    elif st_val <= 0.15:
-        s += 8
-    elif st_val <= 0.20:
-        s += 5
+    # ST
+    if st_val is not None:
+        if st_val <= 0.10:
+            s += 10
+        elif st_val <= 0.15:
+            s += 8
+        elif st_val <= 0.20:
+            s += 5
+        else:
+            s -= 5
+
+    # 平均ST（ハイフン対応）
+    if avg_st is not None:
+        if avg_st <= 0.13:
+            s += 6
+        elif avg_st <= 0.16:
+            s += 3
+        else:
+            s -= 3
     else:
-        s -= 5
+        # データなし → 少し荒れ要素
+        s += 1
 
-    if avg_st <= 0.13:
-        s += 6
-    elif avg_st <= 0.16:
-        s += 3
-
+    # モーター・ボート
     s += motor * 0.3
     s += boat * 0.2
 
@@ -134,76 +135,35 @@ def score(row):
 
     return s
 
-# ===== 展開予測（風＋波込み） =====
+# ===== 展開 =====
 def predict(df):
-    st_dict = {row["コース"]: to_float(row["ST"]) for _, row in df.iterrows()}
-
-    w = to_float(wind_speed)
-    wa = to_float(wave)
-
-    # 風影響
-    if wind_dir == "向かい風":
-        if w >= 5:
-            return "荒れ（向かい風）"
-
-    if wind_dir == "追い風":
-        if st_dict.get(1,1) <= 0.15:
-            return "逃げ"
-
-    # 波
-    if wa >= 10:
-        return "荒れ（高波）"
-
-    # 通常展開
-    if st_dict.get(1,1) <= 0.15 and st_data["in"] >= 1.1:
+    st_vals = [to_float_or_none(v) or 0.2 for v in df["ST"]]
+    if max(st_vals) - min(st_vals) > 0.15:
+        return "荒れ"
+    if st_vals[0] <= 0.15:
         return "逃げ"
-
-    if st_data["makuri"] >= 1.2:
-        if st_dict.get(3,1) <= 0.12:
-            return "まくり3"
-        if st_dict.get(4,1) <= 0.12:
-            return "まくり4"
-
-    if st_data["sashi"] >= 1.1:
-        if st_dict.get(2,1) <= 0.13:
-            return "差し"
-
-    return "荒れ"
+    return "混戦"
 
 # ===== 買い目 =====
 def generate(df, pattern):
     top = list(df.sort_values(by="スコア", ascending=False)["艇番"])
-
     if pattern == "逃げ":
         return [(1, top[1], top[2])]
-
-    if pattern == "まくり3":
-        return [(3,1,top[2]), (3,top[2],1)]
-
-    if pattern == "まくり4":
-        return [(4,1,top[2]), (4,top[2],1)]
-
-    if pattern == "差し":
-        return [(2,1,top[2])]
-
     return list(itertools.permutations(top[:4],3))[:6]
 
 # ===== 実行 =====
 if st.button("🚀 予想実行"):
     df = pd.DataFrame(boats)
-
     df["スコア"] = df.apply(score, axis=1)
 
     st.subheader("📊 スコア")
     st.dataframe(df.sort_values(by="スコア", ascending=False))
 
     pattern = predict(df)
-
     st.subheader("🔥 展開")
     st.success(pattern)
 
     bets = generate(df, pattern)
-
-    st.subheader("🎯 自動買い目")
+    st.subheader("🎯 買い目")
     for b in bets:
         st.write(b)
